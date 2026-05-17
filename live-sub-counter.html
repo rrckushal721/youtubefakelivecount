@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Live Subscriber Count</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700;900&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  body {
+    font-family: 'Roboto', sans-serif;
+    background: #f9f9f9;
+    min-height: 100vh;
+    display: flex; flex-direction: column;
+  }
+
+  /* TOP BAR */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 24px; height: 56px;
+    background: #f9f9f9; border-bottom: 1px solid #e5e5e5;
+    flex-shrink: 0; z-index: 10;
+  }
+  .live-badge { display:flex; align-items:center; gap:8px; font-size:13px; color:#555; }
+  .live-dot {
+    width:9px; height:9px; border-radius:50%; background:#2196F3;
+    animation: blink 1.4s ease-in-out infinite;
+  }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.25} }
+
+  /* BANNER */
+  .banner-wrap {
+    width:100%; background:#e2e2e2;
+    position:relative; overflow:hidden; cursor:pointer;
+    height:0; padding-bottom:16.35%;
+    min-height:70px; max-height:210px; flex-shrink:0;
+  }
+  .banner-img {
+    position:absolute; top:0; left:0;
+    width:100%; height:100%;
+    object-fit:cover; object-position:center; display:none;
+  }
+  .banner-placeholder {
+    position:absolute; inset:0;
+    display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+    gap:5px; color:#aaa; font-size:13px;
+  }
+  .banner-placeholder small { font-size:11px; color:#bbb; }
+  .banner-overlay {
+    position:absolute; inset:0;
+    background:rgba(0,0,0,0); transition:background .2s;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .banner-wrap:hover .banner-overlay { background:rgba(0,0,0,.3); }
+  .banner-hint {
+    opacity:0; transition:opacity .2s; color:white;
+    font-size:13px; font-weight:600;
+    display:flex; flex-direction:column; align-items:center; gap:5px;
+  }
+  .banner-wrap:hover .banner-hint { opacity:1; }
+  #bannerInput { display:none; }
+
+  /* MAIN */
+  .main {
+    flex:1; display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+    padding: 40px 20px 130px;
+  }
+
+  /* PROFILE */
+  .profile-wrap { position:relative; cursor:pointer; }
+  .profile-ph {
+    width:90px; height:90px; border-radius:50%;
+    background:linear-gradient(135deg,#FF0000,#FF6B00);
+    display:flex; align-items:center; justify-content:center;
+    font-size:34px; font-weight:700; color:white;
+    border:3px solid #ddd;
+  }
+  .profile-img {
+    width:90px; height:90px; border-radius:50%;
+    object-fit:cover; display:none; border:3px solid #ddd;
+  }
+  .profile-overlay {
+    position:absolute; inset:0; border-radius:50%;
+    background:rgba(0,0,0,0); transition:background .2s;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .profile-wrap:hover .profile-overlay { background:rgba(0,0,0,.35); }
+  .p-upload-icon { opacity:0; transition:opacity .2s; color:white; }
+  .profile-wrap:hover .p-upload-icon { opacity:1; }
+  #profileInput { display:none; }
+
+  /* PROFILE + NAME block */
+  .profile-block {
+    display: flex; flex-direction: column;
+    align-items: center;
+    margin-bottom: 54px; gap: 14px;
+    width: 100%;
+  }
+  /* CHANNEL NAME */
+  .name-row {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    width: 100%;
+  }
+  #channelName {
+    grid-column: 2;
+    font-size: 18px; font-weight: 400; color: #111;
+    border: none; background: transparent; outline: none;
+    text-align: center; font-family: 'Roboto', sans-serif;
+    border-bottom: 2px solid transparent; padding: 2px 6px;
+    transition: border-color .2s; cursor: text;
+    width: 160px; /* Perfect center ke liye fixed width */
+  }
+  #channelName:focus { border-bottom: 2px solid #FF0000; }
+  .edit-hint { 
+    grid-column: 3;
+    justify-self: start;
+    margin-left: 6px;
+    font-size: 13px; color: #ccc; opacity: 0; transition: opacity .2s; 
+  }
+  .name-row:hover .edit-hint { opacity: 1; }
+
+  /* ═══════════════════════════════════════
+     ODOMETER COUNTER
+     Each digit is a "window" showing a tall
+     strip of 0-9 that scrolls continuously.
+     The strip is infinitely extended by
+     cloning, so it always rolls in one
+     direction — exactly like YouTube.
+  ═══════════════════════════════════════ */
+  .counter-box { display:flex; flex-direction:column; align-items:center; gap:10px; width:100%; }
+  .digits-row  { display:flex; align-items:flex-end; justify-content:center; gap:2px; }
+
+  /* One digit window */
+  .od-col {
+    width: 68px;
+    height: 116px;
+    overflow: hidden;
+    position: relative;
+  }
+  .od-col.comma-col {
+    width: 22px;
+    overflow: visible;
+    display: flex; align-items: flex-end; padding-bottom: 8px;
+  }
+  .comma-sym { font-size:88px; font-weight:900; color:#111; line-height:1; }
+
+  /* The tall strip — scrolled via transform */
+  .od-strip {
+    position: absolute;
+    top: 0; left: 0; width: 100%;
+    will-change: transform;
+    /* NO transition here — we drive it entirely with JS / RAF */
+  }
+
+  /* Individual digit cell inside strip */
+  .od-digit {
+    height: 116px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 96px; font-weight: 900; color: #111;
+    line-height: 1; flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+    user-select: none;
+  }
+
+  .subs-label { font-size:15px; color:#888; font-weight:400; letter-spacing:.5px; }
+
+  /* ═══════ SETTINGS DRAWER ═══════ */
+  .drawer {
+    position:fixed; bottom:0; left:0; right:0;
+    background:white; border-top:2px solid #f0f0f0;
+    box-shadow:0 -6px 32px rgba(0,0,0,.09); z-index:50;
+  }
+  .drawer-tab {
+    width:100%; background:none; border:none;
+    padding:11px 20px;
+    display:flex; align-items:center; justify-content:center; gap:8px;
+    cursor:pointer; font-size:11px; font-weight:700; color:#888;
+    font-family:'Roboto',sans-serif; letter-spacing:1px;
+    border-bottom:1px solid #f2f2f2; transition:background .15s;
+  }
+  .drawer-tab:hover { background:#fafafa; }
+  .drawer-arrow { font-size:9px; transition:transform .3s; }
+  .drawer.closed .drawer-arrow { transform:rotate(180deg); }
+
+  .drawer-body {
+    overflow:hidden; max-height:400px; opacity:1;
+    transition:max-height .38s cubic-bezier(.4,0,.2,1), opacity .25s;
+  }
+  .drawer.closed .drawer-body { max-height:0; opacity:0; }
+  .drawer-inner { padding:18px 20px 20px; }
+
+  .fields-grid {
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+    gap:14px 16px; margin-bottom:16px;
+  }
+  .field { display:flex; flex-direction:column; gap:5px; }
+  .field label {
+    font-size:10px; font-weight:700; color:#aaa;
+    text-transform:uppercase; letter-spacing:.7px;
+  }
+  .field input {
+    border:1.5px solid #e8e8e8; border-radius:8px;
+    padding:9px 12px; font-size:14px; font-family:'Roboto',sans-serif;
+    color:#111; outline:none; background:#fafafa;
+    transition:border-color .2s, background .2s; width:100%;
+  }
+  .field input:focus { border-color:#FF0000; background:white; }
+  .field .hint { font-size:10px; color:#ccc; }
+
+  .drawer-footer {
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+  }
+  .footer-note { font-size:11px; color:#bbb; max-width:340px; line-height:1.5; }
+  .go-btn {
+    background:#FF0000; color:white; border:none; border-radius:22px;
+    padding:11px 32px; font-size:14px; font-weight:700;
+    cursor:pointer; font-family:'Roboto',sans-serif;
+    transition:background .15s, transform .1s; white-space:nowrap;
+  }
+  .go-btn:hover { background:#d50000; }
+  .go-btn:active { transform:scale(.96); }
+
+  .running-badge {
+    display:none; align-items:center; gap:6px;
+    font-size:12px; color:#2BA640; font-weight:600;
+  }
+  .running-badge.show { display:flex; }
+  .running-dot { width:7px; height:7px; border-radius:50%; background:#2BA640; animation:blink 1s infinite; }
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="live-badge">
+    <div class="live-dot"></div>
+    Updating live
+  </div>
+  <svg height="22" viewBox="0 0 132 30" xmlns="http://www.w3.org/2000/svg">
+    <!-- Red play button box -->
+    <rect x="0" y="0" width="46" height="30" rx="7" fill="#FF0000"/>
+    <polygon points="18,8 18,22 34,15" fill="white"/>
+    <!-- YouTube wordmark -->
+    <text x="52" y="22" font-family="Roboto,Arial,sans-serif" font-size="20" font-weight="700" fill="#282828">YouTube</text>
+  </svg>
+  <div style="width:110px"></div>
+</div>
+
+<!-- BANNER -->
+<div class="banner-wrap" onclick="document.getElementById('bannerInput').click()">
+  <div class="banner-placeholder" id="bannerPh">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="#bbb"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+    <span>Click to add channel banner</span>
+    <small>Best size: 2560 × 1440 px</small>
+  </div>
+  <img class="banner-img" id="bannerImg" alt="banner">
+  <div class="banner-overlay">
+    <div class="banner-hint">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-7 4h14v-2H5v2z"/></svg>
+      Change Banner
+    </div>
+  </div>
+</div>
+<input type="file" id="bannerInput" accept="image/*" onchange="handleBanner(event)">
+
+<!-- MAIN -->
+<div class="main">
+
+  <div class="profile-block">
+    <div class="profile-wrap" onclick="document.getElementById('profileInput').click()">
+      <div class="profile-ph" id="profilePh">Y</div>
+      <img class="profile-img" id="profileImg" alt="profile">
+      <div class="profile-overlay">
+        <svg class="p-upload-icon" width="26" height="26" viewBox="0 0 24 24" fill="white">
+          <path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-7 4h14v-2H5v2z"/>
+        </svg>
+      </div>
+    </div>
+    <input type="file" id="profileInput" accept="image/*" onchange="handleProfile(event)">
+
+    <div class="name-row">
+      <input type="text" id="channelName" value="Your Channel"
+        oninput="autoSize(this)" onkeydown="if(event.key==='Enter')this.blur()">
+      <span class="edit-hint">✏️</span>
+    </div>
+  </div>
+
+  <div class="counter-box">
+    <div class="digits-row" id="digitsRow"></div>
+    <div class="subs-label">Subscribers</div>
+  </div>
+</div>
+
+<!-- SETTINGS DRAWER -->
+<div class="drawer" id="drawer">
+  <button class="drawer-tab" onclick="toggleDrawer()">
+    <span class="drawer-arrow" id="drawerArrow">▲</span>
+    ⚙ LIVE COUNTER SETTINGS
+    <div class="running-badge" id="runningBadge">
+      <div class="running-dot"></div>RUNNING
+    </div>
+  </button>
+  <div class="drawer-body">
+    <div class="drawer-inner">
+      <div class="fields-grid">
+        <div class="field">
+          <label>Starting Subscribers</label>
+          <input type="number" id="fStart" value="1000" min="0" placeholder="e.g. 500000">
+          <span class="hint">Counter begins from this number</span>
+        </div>
+        <div class="field">
+          <label>Interval (seconds)</label>
+          <input type="number" id="fInterval" value="3" min="0.5" max="120" step="0.5" placeholder="e.g. 3">
+          <span class="hint">How often a subscriber is added</span>
+        </div>
+        <div class="field">
+          <label>Min per tick</label>
+          <input type="number" id="fMin" value="1" min="0" placeholder="e.g. 1">
+          <span class="hint">Least added each interval</span>
+        </div>
+        <div class="field">
+          <label>Max per tick</label>
+          <input type="number" id="fMax" value="3" min="1" placeholder="e.g. 10">
+          <span class="hint">Most added each interval</span>
+        </div>
+      </div>
+      <div class="drawer-footer">
+        <div class="footer-note">
+          Every <b id="pInterval">3</b>s, <b id="pMin">1</b>–<b id="pMax">3</b> subscribers will be added with a smooth roll animation.
+        </div>
+        <button class="go-btn" onclick="applyAndStart()">▶ START LIVE</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════════
+   SMOOTH ODOMETER ENGINE
+
+   How it works:
+   - `targetSubs`  = the real subscriber count (jumps instantly on each tick)
+   - `displaySubs` = what's actually shown (smoothly chases targetSubs via RAF)
+   - Each RAF frame, displaySubs moves a fraction closer to targetSubs
+     using an ease-out curve → feels organic, never mechanical
+   - Each digit column has a long strip (0-9 × 20 = 200 cells)
+     We track an absolute "offset index" per column so the strip
+     ONLY ever rolls in one direction — exactly like a real odometer
+   ══════════════════════════════════════════════════ */
+
+const CELL_H   = 116;   // px height of each digit cell
+const REPS     = 20;    // how many times 0-9 repeats in strip
+const MID_WRAP = 10;    // wrap back to this repeat when near edges
+const EASE     = 0.04;  // fraction of gap closed per RAF frame (lower = smoother)
+
+let targetSubs  = 1000;
+let displaySubs = 1000; // float — fractional digits allowed for smoothness
+let rafId       = null;
+let liveTimer   = null;
+let drawerOpen  = true;
+
+/* Per-column state */
+let columns = [];  // { el, strip, absIndex } — absIndex is float offset in strip cells
+
+/* ── Build / Rebuild columns ── */
+function buildStrip() {
+  const row    = document.getElementById('digitsRow');
+  const numStr = Math.round(displaySubs).toLocaleString('en-US');
+  const chars  = numStr.split('');
+  const digitChars = chars.filter(c => c !== ',');
+
+  // Only rebuild if digit count changed
+  if (columns.length !== digitChars.length) {
+    row.innerHTML = '';
+    columns = [];
+
+    chars.forEach(ch => {
+      if (ch === ',') {
+        const col = document.createElement('div');
+        col.className = 'od-col comma-col';
+        col.innerHTML = '<div class="comma-sym">,</div>';
+        row.appendChild(col);
+        return;
+      }
+
+      const col   = document.createElement('div');
+      col.className = 'od-col';
+      const strip = document.createElement('div');
+      strip.className = 'od-strip';
+
+      // Fill strip: 0-9 repeated REPS times
+      for (let r = 0; r < REPS; r++) {
+        for (let d = 0; d <= 9; d++) {
+          const cell = document.createElement('div');
+          cell.className = 'od-digit';
+          cell.textContent = d;
+          strip.appendChild(cell);
+        }
+      }
+
+      col.appendChild(strip);
+      row.appendChild(col);
+
+      // Start absIndex in the middle of the strip so we have room to go up/down
+      const digit = parseInt(ch);
+      const absIndex = MID_WRAP * 10 + digit;  // absolute cell index
+
+      columns.push({ el: col, strip, absIndex: absIndex });
+      // Position strip immediately (no animation)
+      strip.style.transform = `translateY(-${absIndex * CELL_H}px)`;
+    });
+    return;
+  }
+
+  // Same digit count — just update absIndex targets (done in RAF loop)
+}
+
+/* ── RAF loop: smoothly move displaySubs toward targetSubs ── */
+function rafLoop() {
+  const diff = targetSubs - displaySubs;
+
+  if (Math.abs(diff) < 0.01) {
+    displaySubs = targetSubs;
+    applyDigits(true); // final snap
+    rafId = null;
+    return;
+  }
+
+  // Ease-out: move EASE fraction of remaining gap each frame
+  displaySubs += diff * EASE;
+  applyDigits(false);
+  rafId = requestAnimationFrame(rafLoop);
+}
+
+function startRAF() {
+  if (!rafId) rafId = requestAnimationFrame(rafLoop);
+}
+
+/* ── Apply current displaySubs to columns ── */
+function applyDigits(isFinal) {
+  const rounded = Math.round(displaySubs);
+  const numStr  = rounded.toLocaleString('en-US');
+  const chars   = numStr.split('');
+  const digitChars = chars.filter(c => c !== ',');
+
+  // Rebuild if digit count changed (e.g. 999→1000)
+  if (columns.length !== digitChars.length) {
+    buildStrip();
+    return;
+  }
+
+  digitChars.forEach((ch, i) => {
+    const target = parseInt(ch);
+    const col    = columns[i];
+    const curVisDigit = col.absIndex % 10; // current digit shown
+
+    // How many steps to roll forward to reach target digit?
+    let steps = (target - curVisDigit + 10) % 10;
+    // But if displaySubs is going DOWN (very rare / not used), go backward
+    // We always roll forward to keep the one-direction odometer feel
+
+    if (steps !== 0 || isFinal) {
+      col.absIndex += steps;
+
+      // If absIndex is getting too high, silently jump back (no visual glitch)
+      if (col.absIndex > (REPS - 3) * 10) {
+        col.absIndex -= MID_WRAP * 10;
+        col.strip.style.transition = 'none';
+        col.strip.style.transform  = `translateY(-${col.absIndex * CELL_H}px)`;
+        // Force reflow so next frame uses transition again
+        col.strip.getBoundingClientRect();
+      }
+
+      // Smooth CSS transition for the roll (shorter = snappier per-step feel)
+      col.strip.style.transition = `transform 0.55s cubic-bezier(0.25, 1, 0.5, 1)`;
+      col.strip.style.transform  = `translateY(-${col.absIndex * CELL_H}px)`;
+    }
+  });
+}
+
+/* ── Live ticker ── */
+function startLive(intervalMs, minTick, maxTick) {
+  if (liveTimer) clearInterval(liveTimer);
+  liveTimer = setInterval(() => {
+    const gain = Math.floor(Math.random() * (maxTick - minTick + 1)) + minTick;
+    targetSubs += gain;
+    startRAF();
+  }, intervalMs);
+}
+
+/* ── Apply settings ── */
+function applyAndStart() {
+  const start    = parseInt(document.getElementById('fStart').value);
+  const interval = parseFloat(document.getElementById('fInterval').value) || 3;
+  const minTick  = parseInt(document.getElementById('fMin').value) || 1;
+  let   maxTick  = parseInt(document.getElementById('fMax').value) || 3;
+  if (maxTick < minTick) maxTick = minTick;
+  if (!isNaN(start) && start >= 0) {
+    targetSubs  = start;
+    displaySubs = start;
+  }
+
+  buildStrip();
+  startLive(Math.max(300, interval * 1000), minTick, maxTick);
+  document.getElementById('runningBadge').classList.add('show');
+  if (drawerOpen) toggleDrawer();
+}
+
+/* ── Drawer ── */
+function toggleDrawer() {
+  drawerOpen = !drawerOpen;
+  document.getElementById('drawer').classList.toggle('closed', !drawerOpen);
+  document.getElementById('drawerArrow').textContent = drawerOpen ? '▲' : '▼';
+}
+
+/* Live preview */
+['fInterval','fMin','fMax'].forEach(id =>
+  document.getElementById(id).addEventListener('input', () => {
+    document.getElementById('pInterval').textContent = document.getElementById('fInterval').value || '3';
+    document.getElementById('pMin').textContent      = document.getElementById('fMin').value      || '1';
+    document.getElementById('pMax').textContent      = document.getElementById('fMax').value      || '3';
+  })
+);
+
+/* ── Uploads ── */
+function handleBanner(e) {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => {
+    const img = document.getElementById('bannerImg');
+    img.src = ev.target.result; img.style.display = 'block';
+    document.getElementById('bannerPh').style.display = 'none';
+  };
+  r.readAsDataURL(f);
+}
+function handleProfile(e) {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => {
+    const img = document.getElementById('profileImg');
+    img.src = ev.target.result; img.style.display = 'block';
+    document.getElementById('profilePh').style.display = 'none';
+  };
+  r.readAsDataURL(f);
+}
+
+/* ── Name input ── */
+function autoSize(el) { /* no-op: browser sizes naturally */ }
+const _nameEl = document.getElementById('channelName');
+_nameEl.addEventListener('focus', function(){ this.select(); });
+
+/* ── Init ── */
+buildStrip();
+autoSize(_nameEl);
+</script>
+</body>
+</html>
